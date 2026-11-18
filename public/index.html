@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>game or chat</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    html, body {
+      width: 100vw; height: 100vh; height: 100dvh;
+      background-color: #16161a; color: #f1f1f3;
+      overflow: hidden;
+    }
+
+    .container {
+      width: 100%; height: 100%;
+      background-color: #16161a;
+      display: flex; flex-direction: column; position: relative; overflow: hidden;
+    }
+
+    .hidden { display: none !important; }
+
+    /* 공통 입력창 & 버튼 */
+    input {
+      width: 100%; padding: 15px; border-radius: 10px; border: 1px solid #32323e;
+      background-color: #202026; color: #ffffff; font-size: 16px; outline: none; margin-bottom: 12px;
+    }
+    input:focus { border-color: #6c5ce7; }
+    button {
+      width: 100%; padding: 15px; border-radius: 10px; border: none;
+      font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.15s;
+    }
+    .btn-primary { background-color: #6c5ce7; color: #fff; }
+    .btn-primary:active { background-color: #5848c2; }
+    .btn-secondary { background-color: #26262e; color: #ccc; margin-top: 8px; }
+    .btn-success { background-color: #00b894; color: #fff; }
+    .btn-danger { background-color: #e74c3c; color: #fff; }
+
+    /* [화면 1: 입구] */
+    #screen-entry {
+      flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
+      padding: 28px; text-align: center; overflow-y: auto;
+    }
+    .entry-inner { width: 100%; max-width: 420px; }
+    .badge {
+      display: inline-block; margin-bottom: 12px; padding: 6px 14px;
+      background: #252530; color: #a29bfe; border-radius: 20px; font-size: 12px; font-weight: bold;
+    }
+    h1 { font-size: 32px; color: #fff; margin-bottom: 10px; }
+    .desc { font-size: 15px; color: #9a9aa6; line-height: 1.5; margin-bottom: 24px; }
+    .notice {
+      background: #1e1e26; border-left: 3px solid #6c5ce7; padding: 14px;
+      border-radius: 6px; font-size: 14px; color: #ccc; text-align: left; margin-bottom: 20px;
+    }
+    .host-box {
+      margin-top: 14px; padding: 16px; background: #1c1c22;
+      border: 1px solid #2f2f3b; border-radius: 12px;
+    }
+
+    /* [화면 2: 입장 확인 중] */
+    #screen-waiting {
+      flex: 1; display: flex; flex-direction: column; justify-content: center;
+      align-items: center; padding: 28px; text-align: center;
+    }
+    .loader {
+      width: 48px; height: 48px; border: 4px solid #2b2b36; border-top-color: #6c5ce7;
+      border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* [화면 3: 채팅방] */
+    #screen-chat { flex: 1; display: flex; flex-direction: column; width: 100%; height: 100%; }
+    .header {
+      padding: 16px 20px; background: #1c1c22; border-bottom: 1px solid #2a2a32;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .header h2 { font-size: 19px; color: #fff; }
+    .member-bar { font-size: 13px; color: #999; margin-top: 4px; cursor: pointer; }
+    .member-bar span { color: #a29bfe; font-weight: bold; }
+
+    .call-banner {
+      background: #00b894; color: #fff; padding: 12px 20px; font-size: 14px; font-weight: bold;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .call-banner button { width: auto; padding: 6px 12px; font-size: 12px; background: #16161a; color: #fff; }
+
+    /* 방장 전용 패널 */
+    .host-panel { background: #211c29; border-bottom: 1px solid #3c2f52; padding: 12px 20px; font-size: 14px; }
+    .host-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .host-top span { color: #d6a2e8; font-weight: bold; }
+    .btn-sm { width: auto; padding: 6px 12px; font-size: 12px; border-radius: 6px; }
+    .wait-row {
+      display: flex; justify-content: space-between; align-items: center;
+      background: #2b2436; padding: 10px 14px; border-radius: 8px; margin-top: 6px;
+    }
+    .wait-btns { display: flex; gap: 6px; }
+
+    /* 대화창 */
+    .messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+    .msg { max-width: 75%; display: flex; flex-direction: column; }
+    .msg.other { align-self: flex-start; }
+    .msg.me { align-self: flex-end; align-items: flex-end; }
+    .sender { font-size: 12px; color: #999; margin-bottom: 4px; }
+    .tag-host { background: #6c5ce7; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }
+    .tag-admin { background: #00b894; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }
+    .bubble { padding: 12px 16px; border-radius: 16px; font-size: 15px; line-height: 1.45; word-break: break-word; }
+    .msg.other .bubble { background: #262630; color: #eee; border-top-left-radius: 2px; }
+    .msg.me .bubble { background: #6c5ce7; color: #fff; border-top-right-radius: 2px; }
+    .sys { text-align: center; font-size: 13px; color: #777; margin: 4px 0; }
+
+    /* 하단 입력칸 */
+    .input-bar {
+      padding: 14px 16px; background: #1c1c22; border-top: 1px solid #2a2a32;
+      display: flex; gap: 8px; align-items: center;
+    }
+    .input-bar input { margin-bottom: 0; flex: 1; padding: 14px; }
+    .btn-send { width: auto; padding: 14px 20px; }
+    .btn-call { width: auto; padding: 14px 16px; background: #00b894; color: #fff; font-size: 18px; }
+
+    /* 참여자 관리 모달 */
+    .modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+      display: flex; justify-content: center; align-items: center; padding: 20px; z-index: 20;
+    }
+    .modal-card { background: #1e1e26; width: 100%; max-width: 400px; border-radius: 14px; padding: 20px; border: 1px solid #333; }
+    .modal-card h3 { font-size: 17px; margin-bottom: 12px; }
+    .m-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-bottom: 1px solid #2d2d38; font-size: 14px;
+    }
+    .m-btns { display: flex; gap: 6px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- [화면 1: 입구] -->
+  <div id="screen-entry">
+    <div class="entry-inner">
+      <span class="badge">GAME & VOICE CHAT</span>
+      <h1>game or chat</h1>
+      <p class="desc">친구들과 게임할 때 통화하거나<br>카카오톡처럼 대화하는 공간</p>
+
+      <div class="notice">
+        📢 <strong>안내:</strong> 방장이 입장을 수락할 때까지 기다리세요.
+      </div>
+
+      <input type="text" id="input-nick" placeholder="닉네임을 입력하세요">
+      <button type="button" class="btn-primary" id="btn-request-entry">입장 요청하기</button>
+      <button type="button" class="btn-secondary" id="btn-toggle-host">방장으로 입장</button>
+
+      <div id="host-box" class="host-box hidden">
+        <input type="text" id="host-id" placeholder="방장 이름">
+        <input type="password" id="host-pw" placeholder="비밀번호 입력">
+        <button type="button" class="btn-primary" id="btn-host-login">방장 로그인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- [화면 2: 입장 확인 중] -->
+  <div id="screen-waiting" class="hidden">
+    <div id="wait-spinner" class="loader"></div>
+    <h2 id="wait-title">입장 확인 중...</h2>
+    <p id="wait-desc" class="desc" style="margin-top: 10px;">방장이 입장을 수락할 때까지 기다리세요.</p>
+    <button type="button" id="btn-enter" class="btn-success hidden" style="max-width: 300px;">바로 들어가기</button>
+  </div>
+
+  <!-- [화면 3: 채팅방] -->
+  <div id="screen-chat" class="hidden">
+    <div class="header">
+      <div>
+        <h2>game or chat</h2>
+        <div class="member-bar" id="btn-open-members">
+          참여 중 (<span id="m-count">1</span>명): <span id="m-names">나</span> ⚙️
+        </div>
+      </div>
+    </div>
+
+    <div id="call-banner" class="call-banner hidden">
+      <span>🔊 실시간 음성 통화 연결됨</span>
+      <button type="button" id="btn-end-call">통화 종료</button>
+    </div>
+
+    <!-- 방장 전용 구역 -->
+    <div id="host-panel" class="host-panel hidden">
+      <div class="host-top">
+        <span>👑 입장 대기 목록</span>
+        <button type="button" class="btn-danger btn-sm" id="btn-close-room">방 닫기</button>
+      </div>
+      <div id="wait-list"><div style="color:#777; font-size:12px;">대기 중인 친구가 없습니다.</div></div>
+    </div>
+
+    <!-- 대화창 -->
+    <div id="chat-box" class="messages">
+      <div class="sys">채팅방에 입장했습니다.</div>
+    </div>
+
+    <!-- 하단 입력칸 + 보내기 + 전화걸기 -->
+    <div class="input-bar">
+      <input type="text" id="msg-input" placeholder="메시지 입력...">
+      <button type="button" class="btn-primary btn-send" id="btn-send-msg">보내기</button>
+      <button type="button" class="btn-call" id="btn-toggle-call" title="전화걸기">📞</button>
+    </div>
+
+    <!-- 참여자 관리 모달 -->
+    <div id="member-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>참여자 관리</h3>
+        <div id="modal-list"></div>
+        <button type="button" class="btn-secondary" style="margin-top: 14px;" id="btn-close-modal">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="audio-container"></div>
+
+</div>
+
+<script>
+  const socket = io();
+  let myName = "";
+  let isHost = false;
+  let members = [];
+  let localStream = null;
+  let peers = {}; // WebRTC 음성 통화 연결 관리
+
+  function switchView(id) {
+    document.getElementById('screen-entry').classList.add('hidden');
+    document.getElementById('screen-waiting').classList.add('hidden');
+    document.getElementById('screen-chat').classList.add('hidden');
+    document.getElementById(id).classList.remove('hidden');
+  }
+
+  // UI 이벤트 등록
+  document.getElementById('btn-toggle-host').addEventListener('click', () => {
+    const box = document.getElementById('host-box');
+    box.classList.toggle('hidden');
+    if (!box.classList.contains('hidden')) document.getElementById('host-id').focus();
+  });
+
+  document.getElementById('host-pw').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') handleHostLogin();
+  });
+  document.getElementById('btn-host-login').addEventListener('click', handleHostLogin);
+  document.getElementById('btn-request-entry').addEventListener('click', handleRequestEntry);
+  document.getElementById('btn-enter').addEventListener('click', () => {
+    socket.emit('join-chat', { name: myName });
+    switchView('screen-chat');
+  });
+  document.getElementById('btn-send-msg').addEventListener('click', sendMsg);
+  document.getElementById('msg-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendMsg();
+  });
+  document.getElementById('btn-toggle-call').addEventListener('click', toggleCall);
+  document.getElementById('btn-end-call').addEventListener('click', toggleCall);
+  document.getElementById('btn-open-members').addEventListener('click', openMembers);
+  document.getElementById('btn-close-modal').addEventListener('click', () => {
+    document.getElementById('member-modal').classList.add('hidden');
+  });
+  document.getElementById('btn-close-room').addEventListener('click', () => {
+    if (confirm("방을 닫고 입구로 나가시겠습니까?")) {
+      socket.emit('close-room');
+    }
+  });
+
+  // [방장 로그인]
+  function handleHostLogin() {
+    const name = document.getElementById('host-id').value.trim();
+    const pw = document.getElementById('host-pw').value.trim();
+    if (!name) return alert("방장 이름을 입력하세요.");
+    if (!pw) return alert("비밀번호를 입력하세요.");
+
+    socket.emit('host-login', { name, password: pw }, (res) => {
+      if (!res.success) return alert(res.message);
+
+      myName = name;
+      isHost = true;
+      members = res.members;
+      document.getElementById('host-panel').classList.remove('hidden');
+      refreshMembers();
+      switchView('screen-chat');
+    });
+  }
+
+  // [일반 유저 입장 요청]
+  function handleRequestEntry() {
+    const nick = document.getElementById('input-nick').value.trim();
+    if (!nick) return alert("닉네임을 입력하세요.");
+
+    socket.emit('request-entry', { name: nick }, (res) => {
+      if (!res.success) return alert(res.message);
+
+      myName = nick;
+      isHost = false;
+      switchView('screen-waiting');
+    });
+  }
+
+  // [소켓 실시간 수신]
+  socket.on('waitlist-update', (waitList) => {
+    const list = document.getElementById('wait-list');
+    if (waitList.length === 0) {
+      list.innerHTML = '<div style="color:#777; font-size:12px;">대기 중인 친구가 없습니다.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    waitList.forEach(u => {
+      list.innerHTML += `
+        <div class="wait-row">
+          <span>${u.name}</span>
+          <div class="wait-btns">
+            <button type="button" class="btn-success btn-sm" onclick="decideWait('${u.id}', true)">수락</button>
+            <button type="button" class="btn-danger btn-sm" onclick="decideWait('${u.id}', false)">거절</button>
+          </div>
+        </div>
+      `;
+    });
+  });
+
+  function decideWait(targetId, accept) {
+    socket.emit('decide-wait', { targetId, accept });
+  }
+
+  socket.on('entry-accepted', () => {
+    document.getElementById('wait-spinner').classList.add('hidden');
+    document.getElementById('wait-title').innerText = "방장이 입장을 수락했습니다!";
+    document.getElementById('wait-desc').innerText = "아래 버튼을 눌러 채팅방에 들어가세요.";
+    document.getElementById('btn-enter').classList.remove('hidden');
+  });
+
+  socket.on('entry-rejected', () => {
+    alert("방장이 입장을 거절했습니다.");
+    location.reload();
+  });
+
+  socket.on('kicked', () => {
+    alert("방장에 의해 내보내졌습니다.");
+    location.reload();
+  });
+
+  socket.on('room-closed', () => {
+    alert("방장이 방을 닫았습니다.");
+    location.reload();
+  });
+
+  socket.on('members-update', (updatedMembers) => {
+    members = updatedMembers;
+    refreshMembers();
+    if (!document.getElementById('member-modal').classList.contains('hidden')) {
+      openMembers();
+    }
+  });
+
+  function sendMsg() {
+    const input = document.getElementById('msg-input');
+    const text = input.value.trim();
+    if (!text) return;
+    socket.emit('send-msg', { text });
+    input.value = '';
+  }
+
+  socket.on('receive-msg', ({ senderId, sender, role, text }) => {
+    const box = document.getElementById('chat-box');
+    const isMe = senderId === socket.id;
+    let badge = '';
+    if (role === 'host') badge = '<span class="tag-host">방장</span>';
+    if (role === 'admin') badge = '<span class="tag-admin">관리자</span>';
+
+    box.innerHTML += `
+      <div class="msg ${isMe ? 'me' : 'other'}">
+        <div class="sender">${sender}${badge}</div>
+        <div class="bubble">${text}</div>
+      </div>
+    `;
+    box.scrollTop = box.scrollHeight;
+  });
+
+  socket.on('sys-msg', (text) => {
+    const box = document.getElementById('chat-box');
+    box.innerHTML += `<div class="sys">${text}</div>`;
+    box.scrollTop = box.scrollHeight;
+  });
+
+  function refreshMembers() {
+    document.getElementById('m-count').innerText = members.length;
+    document.getElementById('m-names').innerText = members.map(m => m.id === socket.id ? m.name + "(나)" : m.name).join(', ');
+  }
+
+  function openMembers() {
+    const list = document.getElementById('modal-list');
+    list.innerHTML = '';
+    members.forEach((m) => {
+      let badge = '';
+      if (m.role === 'host') badge = '<span class="tag-host">방장</span>';
+      if (m.role === 'admin') badge = '<span class="tag-admin">관리자</span>';
+
+      let btns = '';
+      if (isHost && m.role !== 'host') {
+        const label = m.role === 'admin' ? '권한해제' : '관리자 주기';
+        btns = `
+          <div class="m-btns">
+            <button type="button" class="btn-secondary btn-sm" style="margin:0" onclick="toggleAdmin('${m.id}')">${label}</button>
+            <button type="button" class="btn-danger btn-sm" onclick="kickMember('${m.id}')">내보내기</button>
+          </div>
+        `;
+      }
+      list.innerHTML += `<div class="m-row"><div>${m.name}${badge}</div>${btns}</div>`;
+    });
+    document.getElementById('member-modal').classList.remove('hidden');
+  }
+
+  function toggleAdmin(targetId) {
+    socket.emit('toggle-admin', { targetId });
+  }
+
+  function kickMember(targetId) {
+    socket.emit('kick-member', { targetId });
+  }
+
+  // --- 다자간 실시간 WebRTC 음성 통화 ---
+  const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+  async function toggleCall() {
+    const banner = document.getElementById('call-banner');
+    if (banner.classList.contains('hidden')) {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        banner.classList.remove('hidden');
+        socket.emit('call-start');
+      } catch (e) {
+        alert("마이크 권한을 허용해야 음성 통화가 가능합니다.");
+      }
+    } else {
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+      }
+      Object.values(peers).forEach(pc => pc.close());
+      peers = {};
+      document.getElementById('audio-container').innerHTML = '';
+      banner.classList.add('hidden');
+    }
+  }
+
+  function createPeerConnection(targetId, isInitiator) {
+    const pc = new RTCPeerConnection(rtcConfig);
+    peers[targetId] = pc;
+
+    if (localStream) {
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    }
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        socket.emit('webrtc-signal', { to: targetId, signal: { candidate: e.candidate } });
+      }
+    };
+
+    pc.ontrack = (e) => {
+      let audio = document.getElementById('audio-' + targetId);
+      if (!audio) {
+        audio = document.createElement('audio');
+        audio.id = 'audio-' + targetId;
+        audio.autoplay = true;
+        document.getElementById('audio-container').appendChild(audio);
+      }
+      audio.srcObject = e.streams[0];
+    };
+
+    if (isInitiator) {
+      pc.createOffer().then(offer => {
+        pc.setLocalDescription(offer);
+        socket.emit('webrtc-signal', { to: targetId, signal: { sdp: offer } });
+      });
+    }
+    return pc;
+  }
+
+  socket.on('user-joined-call', ({ userId }) => {
+    if (localStream) {
+      createPeerConnection(userId, true);
+    }
+  });
+
+  socket.on('webrtc-signal', async ({ from, signal }) => {
+    if (!localStream) return;
+    let pc = peers[from] || createPeerConnection(from, false);
+
+    if (signal.sdp) {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+      if (signal.sdp.type === 'offer') {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('webrtc-signal', { to: from, signal: { sdp: answer } });
+      }
+    } else if (signal.candidate) {
+      await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    }
+  });
+</script>
+
+</body>
+</html>
